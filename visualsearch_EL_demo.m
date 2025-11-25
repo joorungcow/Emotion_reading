@@ -340,7 +340,7 @@ fprintf('WindowKind at TextSize: %d\n', Screen('WindowKind', w));
 % (선택) 개발 중 점검
 assert(Screen('WindowKind', w) > 0, 'Window handle lost before Excel/Text section.');
 
-xlsxPath = fullfile(pwd, 'Experimental stimulus_실험용_수정본6.xlsx');
+xlsxPath = fullfile(pwd, 'Experimental stimulus_실험용_수정본7.xlsx');
 
 if ~isfile(xlsxPath)
     error('Stimulus excel not found: %s', xlsxPath);
@@ -974,29 +974,25 @@ if dummymode == 0
             end
         end
 
-        % --- 타임아웃 → 자동 재캘 ---
+        % --- 타임아웃 → 단순 리셋(재캘 없음) ---
         if (GetSecs - t0) > timeoutS
-            Eyelink('Message','PRACTICE_LEFT_FIX_TIMEOUT_RECAL');
-            Eyelink('SetOfflineMode'); WaitSecs(0.1);
-            EyelinkDoTrackerSetup(el);
-            Eyelink('StartRecording'); WaitSecs(0.1);
-            eye_used = Eyelink('EyeAvailable'); 
-            if eye_used == 2, eye_used = 0; end
-            if eye_used < 0, eye_used = 0; end
+            Eyelink('Message','PRACTICE_LEFT_FIX_TIMEOUT');
 
-            % 화면 복구
+            % 화면만 다시 그려주고
             Screen('FillRect', w, bgColor);
             draw_ABC_fixation(w, leftX, yMid, dp.ppd, ...
                 'outer', outerDeg, 'cross', crossDeg, 'inner', innerDeg, ...
                 'circlecolor', [0 0 0], 'crosscolor', bgColor);
             Screen('Flip', w);
 
-            % 입력/타이머 재무장
+            % 키 / 타이머 리셋 후 다시 dwell 기다림
             kb.only({'escape','r'});
             kb.debounce();
-            tEnter = NaN; t0 = GetSecs;
+            tEnter = NaN; 
+            t0     = GetSecs;
             continue;
         end
+
 
         % --- 시선 샘플 → dwell 판정 ---
         if Eyelink('NewFloatSampleAvailable') > 0
@@ -1174,15 +1170,11 @@ if dummymode == 0
 % === PRACTICE: 오른쪽 ABC dwell 게이트 (필수) ===
 %%% PRACTICE: RIGHT_DWELL 응답 루프(1/2/ESC/R)
 
-        % 타임아웃 → 자동 재캘
-         if (GetSecs - t0) > timeoutS
-            Eyelink('Message','PRACTICE_RIGHT_FIX_TIMEOUT_RECAL');
-            tPause = GetSecs;
-            Eyelink('SetOfflineMode'); WaitSecs(0.1);
-            EyelinkDoTrackerSetup(el);
-            Eyelink('StartRecording'); WaitSecs(0.1);
+        % 타임아웃 → 단순 리셋(재캘 없음)
+        if (GetSecs - t0) > timeoutS
+            Eyelink('Message','PRACTICE_RIGHT_FIX_TIMEOUT');
 
-            % 참가자 화면 복원(문장 + 오른쪽 ABC)
+            % 화면 복원만 하고
             Screen('FillRect', w, bgColor);
             DrawFormattedText(w, thisSentU8, TEXT_LEFT_X, 'center', bk, 0, [], [], 1);
             draw_ABC_fixation(w, rightX, yMid, dp.ppd, ...
@@ -1190,9 +1182,9 @@ if dummymode == 0
                 'circlecolor', [0 0 0], 'crosscolor', bgColor);
             Screen('Flip', w);
 
-            % 시간 보정 + 타이머 리셋
-            dwellPauseOffsetSec = dwellPauseOffsetSec + (GetSecs - tPause);
-            t0 = GetSecs; tEnter = NaN;
+            % 타이머 리셋 후 다시 dwell 기다림
+            t0     = GetSecs; 
+            tEnter = NaN;
             continue;
         end
 
@@ -1673,7 +1665,13 @@ outerDeg = 0.84;
 crossDeg = 0.10;  
 innerDeg = 0.10;
 
-ShowCursor('Arrow', w);                         % 커서는 유지
+% === 커서 표시 정책: 실모드=숨김, 더미모드=표시 ===
+if dummymode ~= 0
+    ShowCursor('Arrow', w);   % dummy 모드에서만 보이게
+else
+    HideCursor;               % real 모드에서는 계속 숨김
+end
+
 kb.only({'escape','r'});                        % ESC/R만 허용
 kb.debounce();                                  % 눌려 있던 키 완전 해제
 t0 = GetSecs; tEnter = NaN;                     % (필요시) 타이머 리셋
@@ -1771,26 +1769,26 @@ if kc(recal)
         end
     end
     
-% 타임아웃 → 자동 재캘 (※ while ‘안’에 있어야 함)
-    if (GetSecs - t0) > timeoutS
-        Eyelink('Message','LEFT_FIX_TIMEOUT_RECAL');
-        try Eyelink('StopRecording'); end
-        Eyelink('SetOfflineMode'); WaitSecs(0.1);
-        EyelinkDoTrackerSetup(el);
-        Eyelink('StartRecording'); WaitSecs(0.1);
+% 타임아웃 → 단순 리셋(재캘 없음)
+if (GetSecs - t0) > timeoutS
+    Eyelink('Message','LEFT_FIX_TIMEOUT');
 
-        Screen('FillRect', w, bgColor);
-        draw_ABC_fixation(w, leftX, yMid, dp.ppd, ...
-            'outer', outerDeg, 'cross', crossDeg, 'inner', innerDeg, ...
-            'circlecolor', [0 0 0], 'crosscolor', bgColor);
-        Screen('Flip', w);
-        ListenChar(2); 
+    % ABC만 다시 보여주고
+    Screen('FillRect', w, bgColor);
+    draw_ABC_fixation(w, leftX, yMid, dp.ppd, ...
+        'outer', outerDeg, 'cross', crossDeg, 'inner', innerDeg, ...
+        'circlecolor', [0 0 0], 'crosscolor', bgColor);
+    Screen('Flip', w);
+    ListenChar(2); 
 
-        kb.only({'escape','r'});
-        kb.debounce();
-        tEnter = NaN; t0 = GetSecs;
-        continue;
-    end
+    % 다시 ESC/R만 기다리면서 dwell 체크
+    kb.only({'escape','r'});
+    kb.debounce();
+    tEnter = NaN; 
+    t0     = GetSecs;
+    continue;
+end
+
 
     WaitSecs(0.005);
 end
@@ -1977,9 +1975,15 @@ holdSec  = 1.0;
 winPx    = 75;
 timeoutS = 10;
 
-ShowCursor('Arrow', w);                  % 필요시 유지
-kb.only({'escape','r'});                 % dwell 동안 ESC/R만 허용
-kb.debounce();                           % 키 완전 해제
+% === 커서 표시 정책: 실모드=숨김, 더미모드=표시 ===
+if dummymode ~= 0
+    ShowCursor('Arrow', w);   % dummy 모드일 때만 커서
+else
+    HideCursor;               % real 모드에서는 계속 숨김 유지
+end
+
+kb.only({'escape','r'});                 
+kb.debounce();                           
 t0 = GetSecs; tEnter = NaN;
 dwellPauseOffsetSec = 0;
 
@@ -2006,6 +2010,7 @@ if dummymode == 0
     else
         rect = Screen('Rect', w);
     end
+
         [down,~,kc] = KbCheck(-3);
         if down
             if kc(keyEsc)
@@ -2068,34 +2073,29 @@ if dummymode == 0
             end
         end
 
-         % --- 타임아웃 → 자동 재캘 ---
-        if (GetSecs - t0) > timeoutS
-            Eyelink('Message','RIGHT_FIX_TIMEOUT_RECAL');
-            tPause = GetSecs;
-            try Eyelink('StopRecording'); end
-            Eyelink('SetOfflineMode'); WaitSecs(0.1);
-            EyelinkDoTrackerSetup(el);
-            Eyelink('StartRecording'); WaitSecs(0.1);
-            eye_used = Eyelink('EyeAvailable'); if eye_used == 2, eye_used = 0; end
+         % --- 타임아웃 → 단순 리셋(재캘 없음) ---
+         if (GetSecs - t0) > timeoutS
+             Eyelink('Message','RIGHT_FIX_TIMEOUT');
 
-            % 호스트/참가자 화면 복구
-            Eyelink('Command','clear_screen %d',7);
-            hostDrawABC(rightX, yMid, dp.ppd, 'outer',1.5, 'cross',0.18, 'inner',0.18);
-            Eyelink('Command','draw_box %d %d %d %d %d', tframe(1), tframe(2), tframe(3), tframe(4), 15);
+             % 호스트/참가자 화면만 복구
+             Eyelink('Command','clear_screen %d',7);
+             hostDrawABC(rightX, yMid, dp.ppd, 'outer',1.5, 'cross',0.18, 'inner',0.18);
+             Eyelink('Command','draw_box %d %d %d %d %d', ...
+                 tframe(1), tframe(2), tframe(3), tframe(4), 15);
 
-            Screen('FillRect', w, bgColor);
-            DrawFormattedText(w, thisSentU8, TEXT_LEFT_X, 'center', bk, 0, [], [], 1);
-            draw_ABC_fixation(w, rightX, yMid, dp.ppd, ...
-                'outer', outerDeg, 'cross', crossDeg, 'inner', innerDeg, ...
-                'circlecolor', [0 0 0], 'crosscolor', bgColor);
-            Screen('Flip', w);
-            ListenChar(2);
+             Screen('FillRect', w, bgColor);
+             DrawFormattedText(w, thisSentU8, TEXT_LEFT_X, 'center', bk, 0, [], [], 1);
+             draw_ABC_fixation(w, rightX, yMid, dp.ppd, ...
+                 'outer', outerDeg, 'cross', crossDeg, 'inner', innerDeg, ...
+                 'circlecolor', [0 0 0], 'crosscolor', bgColor);
+             Screen('Flip', w);
+             ListenChar(2);
 
-            dwellPauseOffsetSec = dwellPauseOffsetSec + (GetSecs - tPause);
-            t0 = GetSecs; tEnter = NaN;
-            continue;
-        end
-
+             % dwell 재시작
+             t0     = GetSecs; 
+             tEnter = NaN;
+             continue;
+         end
         WaitSecs(0.005);
     end
      kb.clear();  % ← 루프 정상 종료 후 한 번만

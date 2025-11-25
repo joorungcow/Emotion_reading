@@ -111,8 +111,8 @@ kb.debounce = @() local_debounce();
 
 % Initialize Sound
 InitializePsychSound;
-Snd('Close');
 end
+
 % ================== 로컬 유틸 ==================
 function [name,t,keyCode] = local_wait(names,timeout,useQueue,dev)
 if nargin<2 || isempty(timeout), timeout = inf; end
