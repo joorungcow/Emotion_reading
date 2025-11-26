@@ -3,6 +3,25 @@
 % see if EL functions (drift correction, recalibration, saving files, etc) work well before using any parts of this script
 
 function visualsearch_EL_demo
+
+    % ===== SAFETY RESET (코드 맨 위, PTB 초기화 전에) =====
+    ListenChar(0);              % 혹시 이전 run이 ListenChar(2) 상태로 죽었을 경우 대비
+    try
+        KbQueueRelease(-1);     % 모든 키보드 장치의 queue 강제 해제
+    catch
+    end
+
+    try
+        Eyelink('Shutdown');    % 이전 run에서 Eyelink가 비정상 종료됐을 때 대비
+    catch
+    end
+
+    Screen('CloseAll');         % 혹시 남아 있는 윈도우 정리
+    ShowCursor;
+    Priority(0);
+    % =====================================================
+
+
  % --- 프리앰블: 시작 전 동기화 셀프체크 ---
     sync = ptb_sync_safety_preamble();
 
@@ -107,15 +126,25 @@ isReal    = false;
 % 1) 모드 결정
 if dummymode == 0
     ok = EyelinkInit(0);  % 실장비 연결 시도
-    if ~ok || Eyelink('IsConnected') ~= 1
-        fprintf('[MODE] EyeLink not connected → fallback to DUMMY.\n');
-        % 안전하게 재초기화
-        try Eyelink('Shutdown'); end
-        EyelinkInit(1);         % 더미 모드로
-        dummymode = 1;
-    else
-        isReal = true;
+
+    if ~ok
+        % 아직 EDF 안 만들었으므로 filetransfer는 의미 없음
+        % 그냥 안내 문구 + 에러로 종료
+        Screen('Preference','TextEncodingLocale','UTF-8');
+        try
+            % 만약 아직 w 안 열었다면 OpenWindow 전에 에러가 나니,
+            % 여기서는 간단히 command window만 써도 됨
+            fprintf('[MODE] EyeLinkInit 실패. 트래커/케이블/네트워크 상태를 확인하세요.\n');
+        end
+        error('[MODE] EyeLinkInit failed. EyeLink not connected.');
     end
+
+    if Eyelink('IsConnected') ~= 1
+        fprintf('[MODE] EyeLink not connected after init.\n');
+        error('[MODE] EyeLink not connected. 실험을 중단합니다.');
+    end
+
+    isReal = true;
 else
     EyelinkInit(1);
 end
@@ -736,22 +765,27 @@ if dummymode == 0
     el = EyelinkInitDefaults(w);
     el.backgroundcolour        = bgColor;
     el.calibrationtargetcolour = [0 0 0];
-    el.targetbeep              = 0;
 
-    InitializePsychSound(1);   % ← PortAudio 엔진 사전 로드(무음이어도 필요)
-EyelinkUpdateDefaults(el);
+    % ★ EyeLink 비프/타깃 삑소리 완전 비활성화
+    el.feedbackbeep = 0;
+    el.targetbeep   = 0;
 
-    Eyelink('Command','screen_pixel_coords = %ld %ld %ld %ld', 0,0,dp.resolution(1)-1,dp.resolution(2)-1);
-    Eyelink('Message','DISPLAY_COORDS %ld %ld %ld %ld', 0,0,dp.resolution(1)-1,dp.resolution(2)-1);
+    % ★ 오디오 안 쓸 거면 이 줄은 삭제 또는 주석
+    % InitializePsychSound(1);
+
+    EyelinkUpdateDefaults(el);
+
+    Eyelink('Command','screen_pixel_coords = %ld %ld %ld %ld', ...
+        0, 0, dp.resolution(1)-1, dp.resolution(2)-1);
+    Eyelink('Message','DISPLAY_COORDS %ld %ld %ld %ld', ...
+        0, 0, dp.resolution(1)-1, dp.resolution(2)-1);
     Eyelink('Command','calibration_type = HV9');
 
-    % 마우스 표시 유지하려면 다음 줄은 주석 처리하거나 ShowCursor로 교체
     HideCursor;
 
-    % ==== 크래시 회피: 연결 확인 후에만, 필요시만 셋업 ====
-    Eyelink('SetOfflineMode'); WaitSecs(0.1);
-    % A: 완전 스킵 → 아래 두 줄 모두 주석
-     EyelinkDoTrackerSetup(el);
+    Eyelink('SetOfflineMode'); 
+    WaitSecs(0.1);
+    EyelinkDoTrackerSetup(el);
 else
     ShowCursor('Arrow', w);
 end
@@ -914,7 +948,7 @@ phase_log('BEGIN','LEFT_DWELL', 'trial', p);
 
 holdSec  = 1.0;
 winPx    = 75;
-timeoutS = 10;
+timeoutS = 10;  % 권장: 10초마다 재무장(=t0 초기화 후 10초를 다시 셈, 실험 흐름 유지). 누적 카운트가 필요하면 별도 로직 추가가 필요함.
 t0       = GetSecs;
 tEnter   = NaN;
 
@@ -977,6 +1011,8 @@ if dummymode == 0
         % --- 타임아웃 → 단순 리셋(재캘 없음) ---
         if (GetSecs - t0) > timeoutS
             Eyelink('Message','PRACTICE_LEFT_FIX_TIMEOUT');
+            fprintf('[LEFT DWELL] 10s timeout → 화면 리셋 + 타이머 재무장(재캘은 R 키 수동).\n');
+
 
             % 화면만 다시 그려주고
             Screen('FillRect', w, bgColor);
@@ -1073,7 +1109,9 @@ if ~Screen('WindowKind', w)
                 'outer', outerDeg, 'cross', crossDeg, 'inner', innerDeg, ...
                 'circlecolor', [0 0 0], 'crosscolor', bgColor);
             Screen('Flip', w);
-            t0 = GetSecs; tEnter = NaN;
+            fprintf('[LEFT DWELL DUMMY] 10s timeout → 화면 리셋, 타이머 재무장(R 키 수동 재캘 가능).\n');
+            tEnter = NaN; t0 = GetSecs;
+            safeKbReleaseWait;
         end
 
         WaitSecs(0.005);
@@ -1511,6 +1549,10 @@ for i = 1:numTrial
     % --- 트라이얼 시작 시 창 유효성 보장 ---
     [w, rect, cx, cy] = ensureWindow(w, whichscreen, bgColor, 40, pickedFont, pickedRenderer);
 
+    % >>> 여기 추가 <<<
+    checkLinkOrAbort('TRIAL_START', sprintf('trial %d', i), ...
+        dirname, edfFile, dummymode, w, bgColor, pickedFont, pickedRenderer);
+
      % 여기서 rect를 동기화 (이 줄 바로 아래 삽입)
     rect = Screen('Rect', w);
     dp.resolution = [rect(3) rect(4)];   % grid, ABC 오프셋, tframe 모두 같은 기준
@@ -1527,8 +1569,50 @@ if blockStart
     Screen('DrawLine', w, colPlus, cx, cy-25, cx, cy+25, 5);
     Screen('Flip', w);
     Eyelink('Message','BLOCK_FIXATION_ON %d', Final.block(i));
-    WaitSecs(1.0);
-    % 여기서 지우는 Flip 넣지 말 것! 다음 화면 Flip으로 자연 전환
+
+% === [PATCH] 블록 시작 '+' 화면에서 fresh 키 입력 대기 ===
+% (이전 run/phase에서 눌려 있던 키 상태가 남아있어도 여기서 정리)
+
+% 1) 이미 눌려 있는 키가 있으면 전부 올라갈 때까지 대기
+while KbCheck(-1)
+    WaitSecs(0.01);
+end
+
+% 2) ESC / SPACE / ENTER 중 **새로 눌린 키**만 받기
+KbName('UnifyKeyNames');
+keyEsc   = KbName('ESCAPE');
+keySpace = KbName('space');
+keyRet   = KbName('return');
+
+while true
+    [down,~,kc] = KbCheck(-1);
+    if ~down
+        WaitSecs(0.01);
+        continue;
+    end
+
+    % --- ESC: 블록 시작 전에 바로 전체 종료 ---
+    if kc(keyEsc)
+        if dummymode==0
+            Eyelink('SetOfflineMode'); WaitSecs(0.5);
+            Eyelink('CloseFile'); filetransfer(dirname, edfFile, dummymode);
+        end
+        cleanup; return;
+    % --- SPACE / ENTER: 정상적으로 다음 단계(LEFT ABC)로 진행 ---
+    elseif kc(keySpace) || kc(keyRet)
+        % 나중 동작은 그대로 두고, 여기서 루프만 탈출
+        break;
+    end
+
+    % 다른 키가 눌렸으면: 무시 + 키가 올라갈 때까지 기다렸다가 다시 체크
+    while KbCheck(-1)
+        WaitSecs(0.01);
+    end
+end
+
+% 여기서 따로 Screen('Flip')으로 +를 지우지 않는다.
+% 바로 아래의 LEFT ABC 그리는 Flip이 화면을 자연스럽게 덮어씀.
+    
 end
 
     fprintf('Trial %d 시작, WindowKind=%d\n', i, Screen('WindowKind', w));
@@ -1573,11 +1657,25 @@ if dummymode==0
         i, currentBlock, firstTrialInBlock, i-firstTrialInBlock, doDrift);
 
      if doDrift
-        Eyelink('Message','AUTO_DRIFT_BEGIN %d', i);
-        Eyelink('SetOfflineMode'); WaitSecs(0.1);
-        EyelinkDoDriftCorrection(el, cx, cy);         % 드리프트 UI
-        Eyelink('Message','AUTO_DRIFT_END %d', i);
-    end
+    % (1) 드리프트 시작 메시지 로그
+    Eyelink('Message','AUTO_DRIFT_BEGIN %d', i);
+
+    % (2) 오프라인 모드 전환 + 잠깐 대기
+    Eyelink('SetOfflineMode');
+    WaitSecs(0.05);  % 0.1도 괜찮고 0.05로 줄여도 됨
+
+    % (3) 키 상태 초기화 (이게 핵심!)
+    Eyelink('Flushkeybuttons');   % Eyelink 쪽 키버퍼 비우기
+    KbReleaseWait(-1);            % PTB 키보드에서 모든 키가 올라갈 때까지 대기
+
+    % (4) Drift correction 실행 (중앙 cx,cy, 십자 그리기/allow setup 둘 다 1)
+    status = EyelinkDoDriftCorrection(el, cx, cy, 1, 1);
+    fprintf('[DRIFT] trial=%d | status=%d\n', i, status);
+
+    % (5) 드리프트 종료 메시지 + 상태 남기기
+    Eyelink('Message','AUTO_DRIFT_END %d STATUS %d', i, status);
+end
+
 end
 
 % (드리프트 코렉션을 했든 안 했든) 호스트 오버레이는 항상 그림
@@ -1702,6 +1800,10 @@ if dummymode == 0
     if eye_used < 0, eye_used = 0; end
 
     while true
+        % === 링크 상태 체크: 끊기면 EDF 정리 후 종료 ===
+        checkLinkOrAbort('MAIN_LEFT_DWELL', sprintf('trial %d LEFT_DWELL', i), ...
+            dirname, edfFile, dummymode, w, bgColor, pickedFont, pickedRenderer);
+
         if ~Screen('WindowKind', w)
         [w, rect, cx, cy] = ensureWindow(w, whichscreen, bgColor, 40, pickedFont, pickedRenderer);
         Screen('FillRect', w, bgColor); Screen('Flip', w);
@@ -2003,6 +2105,10 @@ if dummymode == 0
     DisableKeysForKbCheck([]);
 
       while true
+        % === 링크 상태 체크: 끊기면 EDF 정리 후 종료 ===
+        checkLinkOrAbort('MAIN_RIGHT_DWELL', sprintf('trial %d RIGHT_DWELL', i), ...
+            dirname, edfFile, dummymode, w, bgColor, pickedFont, pickedRenderer);
+
         % --- ESC / 재캘 ---
         if ~Screen('WindowKind', w)
         [w, rect, cx, cy] = ensureWindow(w, whichscreen, bgColor, 40, pickedFont, pickedRenderer);
